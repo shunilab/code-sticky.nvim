@@ -12,6 +12,10 @@ end, {
   end,
 })
 
+vim.api.nvim_create_user_command("CodeStickyNew", function()
+  require("code-sticky.float").new_sibling_cmd()
+end, {})
+
 local augroup = vim.api.nvim_create_augroup("code_sticky", { clear = true })
 
 vim.api.nvim_create_autocmd({ "BufReadPost", "BufNewFile" }, {
