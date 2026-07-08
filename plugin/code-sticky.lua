@@ -8,7 +8,7 @@ vim.api.nvim_create_user_command("CodeSticky", function(opts)
 end, {
   nargs = "?",
   complete = function()
-    return { "buffer", "list", "archive" }
+    return { "buffer", "list", "archive", "undo", "redo" }
   end,
 })
 

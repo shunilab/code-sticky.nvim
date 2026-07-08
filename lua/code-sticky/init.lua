@@ -20,6 +20,10 @@ function M.dispatch(subcmd)
     float.open_at_cursor({ display = "window" })
   elseif subcmd == "archive" then
     M.archive_at_cursor()
+  elseif subcmd == "undo" then
+    M.undo()
+  elseif subcmd == "redo" then
+    M.redo()
   elseif subcmd == nil or subcmd == "" then
     float.open_at_cursor({ display = "float" })
   else
@@ -66,6 +70,31 @@ function M.archive_at_cursor()
       do_archive(idx)
     end
   end)
+end
+
+--- Undo the most recent notes.md mutation (upsert/delete/archive) for the
+--- current project. Repeatable: calling it again steps back one further
+--- mutation. Backed by Neovim's own (persistent, with 'undofile') undo tree
+--- for the notes.md buffer, so it survives across restarts.
+function M.undo()
+  local root = store.root(0)
+  if store.undo_notes(root) then
+    require("code-sticky.signs").refresh_all(root)
+    vim.notify("code-sticky: undid last notes.md change", vim.log.levels.INFO)
+  else
+    vim.notify("code-sticky: nothing to undo", vim.log.levels.INFO)
+  end
+end
+
+--- Redo the most recently undone notes.md mutation. Mirror of `M.undo`.
+function M.redo()
+  local root = store.root(0)
+  if store.redo_notes(root) then
+    require("code-sticky.signs").refresh_all(root)
+    vim.notify("code-sticky: redid notes.md change", vim.log.levels.INFO)
+  else
+    vim.notify("code-sticky: nothing to redo", vim.log.levels.INFO)
+  end
 end
 
 return M

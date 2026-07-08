@@ -92,4 +92,46 @@ do
   h.eq(0, #notes_doc.entries, "notes.md empty after archiving its only entry")
 end
 
+-- undo: an accidental delete (blanking a sticky and closing it) can be
+-- undone via store.undo_notes, restoring the lost entry.
+do
+  local root = h.scaffold()
+  store.upsert_notes(root, "lua/sample.lua", 10, nil, { "keep me" })
+  store.upsert_notes(root, "lua/sample.lua", 10, nil, { "! oops don't delete me" })
+  h.eq(2, #store.read_notes(root).entries, "two entries exist before the accidental delete")
+
+  store.delete_notes(root, "lua/sample.lua", 10, 2)
+  h.eq(1, #store.read_notes(root).entries, "one entry left after the accidental delete")
+
+  h.ok(store.undo_notes(root), "undo_notes reports a change")
+  local doc = store.read_notes(root)
+  h.eq(2, #doc.entries, "undo restores the deleted entry")
+  h.eq({ "! oops don't delete me" }, doc.entries[2].body, "restored entry body matches")
+
+  -- Each write_notes call is its own undo step, so undo is repeatable: the
+  -- next call steps back one further mutation (undoes the second upsert),
+  -- and after all three writes have been undone, there is nothing left.
+  h.ok(store.undo_notes(root), "undo_notes steps back further (undoes second upsert)")
+  h.eq(1, #store.read_notes(root).entries, "back to one entry after second undo")
+
+  h.ok(store.undo_notes(root), "undo_notes steps back further still (undoes first upsert)")
+  h.eq(0, #store.read_notes(root).entries, "back to zero entries after third undo")
+
+  h.eq(false, store.undo_notes(root), "undo_notes is false once nothing is undoable this session")
+end
+
+-- redo: undoing then redoing returns to the post-mutation state.
+do
+  local root = h.scaffold()
+  store.upsert_notes(root, "lua/sample.lua", 20, nil, { "will be archived" })
+  store.archive(root, { path = "lua/sample.lua", lnum = 20, index = 1 })
+  h.eq(0, #store.read_notes(root).entries, "entry archived out of notes.md")
+
+  h.ok(store.undo_notes(root), "undo restores the archived entry to notes.md")
+  h.eq(1, #store.read_notes(root).entries, "entry back in notes.md after undo")
+
+  h.ok(store.redo_notes(root), "redo re-applies the archive")
+  h.eq(0, #store.read_notes(root).entries, "entry gone again after redo")
+end
+
 h.finish()

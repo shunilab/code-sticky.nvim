@@ -112,6 +112,8 @@ function M.default_prelude()
     "  K    エントリが指すコード行の周辺をプレビュー",
     "  <CR> 該当ファイル・行へジャンプ",
     "  ga   エントリをアーカイブ",
+    "",
+    "誤って内容を消してしまったときは :CodeSticky undo（元に戻すのは :CodeSticky redo）。",
     "-->",
   }
 end
@@ -230,10 +232,75 @@ function M.read_notes(root)
   return M.read(M.notes_path(root), M.default_prelude())
 end
 
+--- Get (creating if needed) the hidden buffer backing notes.md, loaded from
+--- disk. Routing writes through a real file buffer means every mutation
+--- lands in Neovim's own undo tree for that buffer, and (with 'undofile',
+--- as is the default in this setup) survives across restarts for free.
+---@param root string
+---@return integer bufnr
+local function notes_bufnr(root)
+  local bufnr = vim.fn.bufadd(M.notes_path(root))
+  if vim.fn.bufloaded(bufnr) == 0 then
+    vim.fn.bufload(bufnr)
+  end
+  return bufnr
+end
+
 ---@param root string
 ---@param doc CodeSticky.Doc
 function M.write_notes(root, doc)
-  M.write(M.notes_path(root), doc)
+  vim.fn.mkdir(vim.fs.dirname(M.notes_path(root)), "p")
+  local bufnr = notes_bufnr(root)
+  vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, M.serialize(doc))
+  vim.api.nvim_buf_call(bufnr, function()
+    vim.cmd("silent noautocmd write")
+    -- Force an undo-sync boundary. Without this, back-to-back write_notes
+    -- calls with no intervening user input (CursorMoved/InsertLeave/etc, the
+    -- normal triggers for u_sync()) get merged into a single undo step, so a
+    -- single :undo would jump back past more than one logical mutation.
+    -- Reassigning 'undolevels' is the standard idiom for forcing that sync.
+    vim.bo.undolevels = vim.bo.undolevels
+  end)
+end
+
+--- Undo the most recent notes.md mutation (upsert/delete/archive), restoring
+--- the file to its previous full-file state. Repeatable: each call steps
+--- back one further mutation, same as pressing `u` in the buffer itself.
+---@param root string
+---@return boolean changed
+function M.undo_notes(root)
+  local bufnr = notes_bufnr(root)
+  local before = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  vim.api.nvim_buf_call(bufnr, function()
+    pcall(vim.cmd, "silent undo")
+  end)
+  local after = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  if vim.deep_equal(before, after) then
+    return false
+  end
+  vim.api.nvim_buf_call(bufnr, function()
+    vim.cmd("silent noautocmd write")
+  end)
+  return true
+end
+
+--- Redo the most recently undone notes.md mutation. Mirror of `undo_notes`.
+---@param root string
+---@return boolean changed
+function M.redo_notes(root)
+  local bufnr = notes_bufnr(root)
+  local before = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  vim.api.nvim_buf_call(bufnr, function()
+    pcall(vim.cmd, "silent redo")
+  end)
+  local after = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+  if vim.deep_equal(before, after) then
+    return false
+  end
+  vim.api.nvim_buf_call(bufnr, function()
+    vim.cmd("silent noautocmd write")
+  end)
+  return true
 end
 
 ---@param root string

@@ -43,6 +43,20 @@ function M.refresh(bufnr)
   end
 end
 
+--- Refresh signs in every currently loaded buffer under `root`. Used after
+--- an undo, since we don't know in advance which file(s)' entries changed.
+---@param root string
+function M.refresh_all(root)
+  for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.api.nvim_buf_is_loaded(bufnr) then
+      local bufname = vim.api.nvim_buf_get_name(bufnr)
+      if bufname ~= "" and store.root(bufnr) == root then
+        M.refresh(bufnr)
+      end
+    end
+  end
+end
+
 --- Jump to the next/previous sticky-marked line in the current buffer,
 --- wrapping around and echoing a message when it does.
 ---@param direction "next"|"prev"

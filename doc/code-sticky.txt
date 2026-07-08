@@ -69,6 +69,16 @@ Neovim 専用（0.10+）。純 Lua、必須依存ゼロ（Telescope はあれば
 	カーソル行の付箋をアーカイブする。複数あれば |vim.ui.select()|
 	で選択する。
 
+:CodeSticky undo
+	notes.md への直近の変更（保存・削除・アーカイブ）を1つ取り消す。
+	繰り返すとさらに遡れる。notes.md 専用の hidden バッファを介して
+	書き込みを行い、その Undo 履歴をそのまま利用している。
+	'undofile' が有効なら Neovim を再起動しても取り消せる。
+	archive.md 側は対象外（複製は残る）。
+
+:CodeSticky redo
+	|:CodeSticky-undo| で取り消した変更をやり直す。
+
 :CodeStickyNew					*:CodeStickyNew*
 	付箋フロート/ウィンドウ内で実行する。同じ行に新規ブランク付箋
 	を隣に追加してフォーカスを移動する（デフォルトマップ `<C-n>`）。
