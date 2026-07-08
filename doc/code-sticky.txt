@@ -1,0 +1,169 @@
+*code-sticky.txt*	Sticky notes on code lines, stored as plain Markdown
+
+Author:  shuni
+License: MIT
+
+==============================================================================
+目次						*code-sticky* *code-sticky.nvim*
+
+  1. 概要 ......................... |code-sticky-intro|
+  2. ストレージ .................... |code-sticky-storage|
+  3. コマンド ..................... |code-sticky-commands|
+  4. notes.md 内のキーマップ ....... |code-sticky-notes-keymaps|
+  5. Sign とジャンプ ............... |code-sticky-signs|
+  6. Telescope 連携 ................ |code-sticky-telescope|
+  7. 設定 ......................... |code-sticky-config|
+  8. 制限事項 ..................... |code-sticky-limitations|
+
+==============================================================================
+1. 概要						*code-sticky-intro*
+
+コードリーディング中に、コードの行へ付箋（メモ・疑問・指摘）を貼って
+いくためのプラグイン。付箋はプロジェクト直下 `.code-sticky/notes.md` に
+プレーンな Markdown として蓄積される。プラグインなしでも読める・AI に
+そのまま渡せる形式が前提。
+
+Neovim 専用（0.10+）。純 Lua、必須依存ゼロ（Telescope はあれば連携する
+オプション）。行追跡はしない（行番号固定。対象コードを編集しない前提）。
+
+==============================================================================
+2. ストレージ					*code-sticky-storage*
+
+プロジェクトルート（`.git` または `.code-sticky` を含むディレクトリ、
+`vim.fs.root()` で判定）直下の `.code-sticky/` に、`notes.md`（現行）と
+`archive.md`（解決済み）の 2 ファイルのみを持つ。
+
+エントリは `## 相対パス:行番号` の見出しで始まり、次の `##` までが本文。
+
+本文の慣習（軽くパースされる）: >
+
+	? で始まる行  -> 疑問
+	! で始まる行  -> 指摘（コードレビュー用途）
+	-> で始まる行 -> 疑問/指摘への回答（解決済み扱い）
+
+それ以外はメモ。この 3 ルール以上の状態管理はしない。
+
+プロジェクト外のファイルへのメモは絶対パス（ホーム配下は `~/` 表記）で
+保存される。
+
+==============================================================================
+3. コマンド					*code-sticky-commands*
+
+:CodeSticky					*:CodeSticky*
+	カーソル行の付箋をフロートで開く。なければ新規ブランク付箋。
+	既に開いていれば既存フロートへフォーカスする。
+
+	付箋フロートは `buftype=acwrite` の本物のバッファ。`:w` で保存、
+	Undo 有効。ノーマルモードの `q` / `<Esc>` で閉じると自動保存
+	される。空白のまま閉じたら何も書き込まれず、既存の付箋を空白に
+	して閉じたら削除される。
+
+:CodeSticky buffer
+	同上だが、フロートでなく通常ウィンドウ（split）で開く。
+
+:CodeSticky list
+	`.code-sticky/notes.md` を開く。
+
+:CodeSticky archive
+	カーソル行の付箋をアーカイブする。複数あれば |vim.ui.select()|
+	で選択する。
+
+==============================================================================
+4. notes.md 内のキーマップ			*code-sticky-notes-keymaps*
+
+`.code-sticky/notes.md` を開くと、以下のバッファローカルマップが有効に
+なる（|:CodeSticky-list| 経由でも直接 |:edit| でも同じ）。
+
+K	カーソル下エントリが指すコード行の周辺をフロートプレビューする
+	（再度 K で閉じる）。
+
+<CR>	該当ファイル・行へジャンプする（ファイルが短くなっていれば
+	末尾行にクランプする）。
+
+ga	カーソル下エントリをアーカイブする（未保存の編集があれば先に
+	保存してから移す）。
+
+==============================================================================
+5. Sign とジャンプ				*code-sticky-signs*
+
+付箋のある行に sign が付く。未解決の指摘は `!`、未解決の疑問は `?`、
+それ以外（メモ・解決済み）は `N`。同一行に複数あれば `!` > `?` > `N`
+の優先順位で表示する。バッファを開いた時点でスキャンするため、
+`notes.md` を直接編集した場合はバッファを開き直すと反映される。
+
+]n	次の付箋行へジャンプする（count 対応、末尾でラップ）。
+
+[n	前の付箋行へジャンプする（count 対応、先頭でラップ）。
+
+`g:code_sticky_default_mappings = v:false` でこれらのデフォルトマップを
+無効化できる。
+
+==============================================================================
+6. Telescope 連携				*code-sticky-telescope*
+
+[telescope.nvim](https://github.com/nvim-telescope/telescope.nvim) が
+ある場合のみ有効。 >
+
+	require('telescope').load_extension('code_sticky')
+<
+:Telescope code_sticky
+	全エントリを一覧・プレビュー・<CR> でジャンプする。
+
+:Telescope code_sticky questions
+	未解決の疑問のみを一覧する。
+
+:Telescope code_sticky issues
+	未解決の指摘のみを一覧する。
+
+==============================================================================
+7. 設定						*code-sticky-config*
+
+>
+	require('code-sticky').setup({
+	  root_markers = { '.code-sticky', '.git' },
+	  keymaps = {
+	    jump_next = ']n',
+	    jump_prev = '[n',
+	  },
+	  float = {
+	    width = 40,
+	    height = 8,
+	    border = 'rounded',
+	    enter_insert = false,
+	  },
+	  float_keymaps = {
+	    close = { 'q', '<Esc>' },
+	    archive = 'ga',
+	  },
+	  notes_keymaps = {
+	    preview = 'K',
+	    jump = '<CR>',
+	    archive = 'ga',
+	  },
+	  preview = {
+	    context = 8,
+	  },
+	  signs = {
+	    memo = { text = 'N', hl = 'DiagnosticSignInfo' },
+	    question = { text = '?', hl = 'DiagnosticSignWarn' },
+	    issue = { text = '!', hl = 'DiagnosticSignError' },
+	  },
+	})
+<
+`setup()` の呼び出しは必須（引数なしの `{}` でも可）。
+
+==============================================================================
+8. 制限事項					*code-sticky-limitations*
+
+以下は意図的にサポートしない:
+
+  - 複数 Neovim インスタンスの同時書き込みやクラッシュ時のアトミック性
+  - コード編集時の行追従（行番号は固定）
+  - notes.md 手編集時のライブ再同期
+    （バッファを開き直せば sign は更新される）
+  - アーカイブからの復元機能
+  - 本文中にユーザーが `## パス:行` 形式の行を書いた場合の特別扱い
+    （書式契約として、この形式の行は見出しとして扱われる）
+
+==============================================================================
+vim:tw=78:ts=8:noet:ft=help:norl:
