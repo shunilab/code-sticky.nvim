@@ -202,6 +202,37 @@ do
   vim.cmd("%bwipeout!")
 end
 
+-- group: closing the anchor float (the first one, which siblings were
+-- positioned relative to) must not move/garble the still-open sibling's
+-- on-screen position.
+do
+  local root = h.scaffold()
+  write_long_sample(root)
+  store.upsert_notes(root, "lua/sample.lua", 3, nil, { "first" })
+  store.upsert_notes(root, "lua/sample.lua", 3, nil, { "second" })
+
+  vim.cmd.edit(root .. "/lua/sample.lua")
+  vim.api.nvim_win_set_cursor(0, { 3, 0 })
+
+  local first = float.open_at_cursor()
+  local members = vim.api.nvim_list_wins()
+  local second_winid
+  for _, w in ipairs(members) do
+    if w ~= first.winid and vim.api.nvim_win_get_config(w).relative ~= "" then
+      second_winid = w
+    end
+  end
+  h.ok(second_winid ~= nil, "second float found")
+
+  local pos_before = vim.api.nvim_win_get_position(second_winid)
+  vim.api.nvim_win_close(first.winid, true) -- close the anchor float first
+  h.ok(vim.api.nvim_win_is_valid(second_winid), "sibling float survives anchor close")
+  local pos_after = vim.api.nvim_win_get_position(second_winid)
+  h.eq(pos_before, pos_after, "sibling float keeps its position after the anchor float closes")
+
+  vim.cmd("%bwipeout!")
+end
+
 -- group: <Tab>/<S-Tab> cycle focus between a group's open floats.
 do
   local root = h.scaffold()

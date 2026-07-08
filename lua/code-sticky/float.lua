@@ -169,11 +169,29 @@ local function create_window(bufnr, display, anchor, enter)
     return winid
   end
   local opts = config.options.float
+  if not anchor then
+    return vim.api.nvim_open_win(bufnr, enter, {
+      relative = "cursor",
+      row = 1,
+      col = 0,
+      width = opts.width,
+      height = opts.height,
+      border = opts.border,
+      style = "minimal",
+    })
+  end
+
+  -- Snapshot the anchor's on-screen position now and place this float with
+  -- relative="editor" at a fixed offset from it, rather than relative="win"
+  -- against the anchor's winid: a win-relative float is repositioned (often
+  -- to a garbage location) the moment the window it targets closes, even
+  -- though this float itself stays open.
+  local pos = vim.api.nvim_win_get_position(anchor.winid)
+  local border_pad = (opts.border and opts.border ~= "none") and 1 or 0
   return vim.api.nvim_open_win(bufnr, enter, {
-    relative = anchor and "win" or "cursor",
-    win = anchor and anchor.winid or nil,
-    row = anchor and 0 or 1,
-    col = anchor and (opts.width + opts.gap) or 0,
+    relative = "editor",
+    row = pos[1],
+    col = pos[2] + opts.width + border_pad + opts.gap,
     width = opts.width,
     height = opts.height,
     border = opts.border,
