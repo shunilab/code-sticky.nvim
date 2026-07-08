@@ -7,8 +7,11 @@ vim.api.nvim_create_user_command("CodeSticky", function(opts)
   require("code-sticky").dispatch(opts.args ~= "" and opts.args or nil)
 end, {
   nargs = "?",
-  complete = function()
-    return { "buffer", "list", "archive", "undo", "redo" }
+  complete = function(_, cmdline)
+    if cmdline:match("^%s*CodeSticky%s+jumpfloat%s+%S*$") then
+      return { "on", "off", "toggle" }
+    end
+    return { "buffer", "list", "archive", "undo", "redo", "jumpfloat" }
   end,
 })
 

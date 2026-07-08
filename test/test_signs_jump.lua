@@ -76,4 +76,25 @@ do
   vim.cmd("bwipeout!")
 end
 
+-- jump_opens_float: runtime toggle via :CodeSticky jumpfloat [on|off|toggle],
+-- without needing setup() to be re-run.
+do
+  local config = require("code-sticky.config")
+  local cs = require("code-sticky")
+
+  h.eq(false, config.options.jump_opens_float, "starts at the documented default")
+
+  cs.dispatch("jumpfloat on")
+  h.eq(true, config.options.jump_opens_float, "jumpfloat on sets it true")
+
+  cs.dispatch("jumpfloat toggle")
+  h.eq(false, config.options.jump_opens_float, "jumpfloat toggle flips it back to false")
+
+  cs.dispatch("jumpfloat")
+  h.eq(true, config.options.jump_opens_float, "bare jumpfloat toggles too")
+
+  cs.dispatch("jumpfloat off")
+  h.eq(false, config.options.jump_opens_float, "jumpfloat off sets it false")
+end
+
 h.finish()

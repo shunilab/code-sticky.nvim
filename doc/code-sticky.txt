@@ -79,6 +79,10 @@ Neovim 専用（0.10+）。純 Lua、必須依存ゼロ（Telescope はあれば
 :CodeSticky redo
 	|:CodeSticky-undo| で取り消した変更をやり直す。
 
+:CodeSticky jumpfloat [on|off|toggle]
+	`jump_opens_float`（|code-sticky-config| 参照）を実行時に切り替
+	える。`setup()` の再実行は不要。引数省略時は toggle 扱い。
+
 :CodeStickyNew					*:CodeStickyNew*
 	付箋フロート/ウィンドウ内で実行する。同じ行に新規ブランク付箋
 	を隣に追加してフォーカスを移動する（デフォルトマップ `<C-n>`）。
