@@ -98,6 +98,7 @@ require('code-sticky').setup({
     jump_next = ']n',
     jump_prev = '[n',
   },
+  jump_opens_float = false, -- ]n / [n でジャンプ後にそのままフロートで開く
   float = {
     width = 40,
     height = 8,

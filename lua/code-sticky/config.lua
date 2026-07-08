@@ -8,6 +8,8 @@ M.defaults = {
     jump_next = "]n",
     jump_prev = "[n",
   },
+  -- ]n / [n でジャンプした後、そのままフロートで付箋を開くかどうか
+  jump_opens_float = false,
   float = {
     width = 40,
     height = 8,

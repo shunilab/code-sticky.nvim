@@ -108,6 +108,10 @@ function M.jump(direction)
   end
 
   vim.api.nvim_win_set_cursor(0, { target, 0 })
+
+  if config.options.jump_opens_float then
+    require("code-sticky.float").open_at_cursor({ display = "float" })
+  end
 end
 
 return M
