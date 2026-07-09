@@ -135,10 +135,10 @@ require('code-sticky').setup({
 推奨のリーダーキー割り当て例（デフォルトでは張らない）:
 
 ```lua
-vim.keymap.set('n', '<leader>nn', '<Cmd>CodeSticky<CR>')
-vim.keymap.set('n', '<leader>nl', '<Cmd>CodeSticky list<CR>')
-vim.keymap.set('n', '<leader>na', '<Cmd>CodeSticky archive<CR>')
-vim.keymap.set('n', '<leader>nb', '<Cmd>CodeSticky buffer<CR>')
+vim.keymap.set('n', '<leader>ss', '<Cmd>CodeSticky<CR>')
+vim.keymap.set('n', '<leader>sl', '<Cmd>CodeSticky list<CR>')
+vim.keymap.set('n', '<leader>sa', '<Cmd>CodeSticky archive<CR>')
+vim.keymap.set('n', '<leader>sb', '<Cmd>CodeSticky buffer<CR>')
 ```
 
 ## インストール
