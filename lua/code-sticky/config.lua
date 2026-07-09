@@ -44,6 +44,24 @@ M.options = vim.deepcopy(M.defaults)
 
 ---@param opts table|nil
 function M.setup(opts)
+  if opts ~= nil then
+    vim.validate({ opts = { opts, "table" } })
+    for key, expected in pairs({
+      root_markers = "table",
+      dir_name = "string",
+      keymaps = "table",
+      jump_opens_float = "boolean",
+      float = "table",
+      float_keymaps = "table",
+      notes_keymaps = "table",
+      preview = "table",
+      signs = "table",
+    }) do
+      if opts[key] ~= nil then
+        vim.validate({ [key] = { opts[key], expected } })
+      end
+    end
+  end
   M.options = vim.tbl_deep_extend("force", vim.deepcopy(M.defaults), opts or {})
   return M.options
 end

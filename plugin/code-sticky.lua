@@ -11,7 +11,13 @@ end, {
     if cmdline:match("^%s*CodeSticky%s+jumpfloat%s+%S*$") then
       return { "on", "off", "toggle" }
     end
-    return { "buffer", "list", "archive", "undo", "redo", "jumpfloat" }
+    if cmdline:match("^%s*CodeSticky%s+qf%s+%S*$") then
+      return { "questions", "issues", "memos", "answered" }
+    end
+    if cmdline:match("^%s*CodeSticky%s+list%s+%S*$") then
+      return { "archive" }
+    end
+    return { "buffer", "list", "archive", "undo", "redo", "sort", "sweep", "jumpfloat", "qf" }
   end,
 })
 
@@ -29,7 +35,7 @@ vim.api.nvim_create_autocmd({ "BufReadPost", "BufNewFile" }, {
   end,
 })
 
-vim.api.nvim_create_autocmd("BufReadPost", {
+vim.api.nvim_create_autocmd({ "BufReadPost", "BufNewFile" }, {
   group = augroup,
   pattern = "*/.code-sticky/notes.md",
   callback = function(args)
@@ -37,12 +43,23 @@ vim.api.nvim_create_autocmd("BufReadPost", {
   end,
 })
 
-if vim.g.code_sticky_default_mappings ~= false then
-  local config = require("code-sticky.config")
-  vim.keymap.set("n", config.options.keymaps.jump_next, function()
-    require("code-sticky.signs").jump("next")
-  end, { desc = "code-sticky: jump to next sticky" })
-  vim.keymap.set("n", config.options.keymaps.jump_prev, function()
-    require("code-sticky.signs").jump("prev")
-  end, { desc = "code-sticky: jump to previous sticky" })
-end
+vim.api.nvim_create_autocmd({ "BufReadPost", "BufNewFile" }, {
+  group = augroup,
+  pattern = "*/.code-sticky/archive.md",
+  callback = function(args)
+    require("code-sticky.notes").attach(args.buf, { archive = true })
+  end,
+})
+
+-- Hand-editing notes.md directly (not through a sticky float) and saving it
+-- should still refresh signs in every affected buffer and resync any open
+-- sticky floats' indices, same as undo/redo/sort/sweep do.
+vim.api.nvim_create_autocmd("BufWritePost", {
+  group = augroup,
+  pattern = "*/.code-sticky/notes.md",
+  callback = function(args)
+    local root = vim.fs.dirname(vim.fs.dirname(args.match))
+    require("code-sticky.signs").refresh_all(root)
+    require("code-sticky.float").resync(root)
+  end,
+})

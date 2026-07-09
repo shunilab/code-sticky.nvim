@@ -53,12 +53,53 @@ end
 
 --- After an entry at `removed_index` is deleted/archived, every other open
 --- sticky in the same group whose persisted index sits after it must shift
---- down by one to stay in sync with the on-disk group positions.
-local function reindex_after_removal(root, path, lnum, removed_index)
+--- down by one to stay in sync with the on-disk group positions. Exported
+--- so callers that remove an entry by a route other than flush()/
+--- archive_current() below (notes.lua's `ga`, :CodeSticky archive) can keep
+--- any floats still open on the same line in sync.
+---@param root string
+---@param path string
+---@param lnum integer
+---@param removed_index integer
+function M.reindex_after_removal(root, path, lnum, removed_index)
   for _, st in pairs(state_by_buf) do
     if st.root == root and st.path == path and st.lnum == lnum and st.index and st.index > removed_index then
       st.index = st.index - 1
       st.slot = tostring(st.index)
+    end
+  end
+end
+
+--- Re-resolve `state_by_buf` indices for `root` after a mutation the float
+--- module didn't itself drive (:CodeSticky undo/redo/sort/sweep): for every
+--- open sticky buffer, check whether some entry in its (path, lnum) group
+--- still has the exact same body as the buffer's current content, and
+--- repoint the index there (even if that entry moved to a different
+--- position within the group). If nothing matches, the index is cleared so
+--- the next flush() creates a fresh entry rather than risking an overwrite
+--- of some unrelated entry that now happens to sit at the stale index.
+---@param root string
+function M.resync(root)
+  local doc
+  for bufnr, st in pairs(state_by_buf) do
+    if st.root == root and st.index ~= nil and vim.api.nvim_buf_is_valid(bufnr) then
+      doc = doc or store.read_notes(root)
+      local group = store.group(doc, st.path, st.lnum)
+      local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
+      local matched
+      for gi, e in ipairs(group) do
+        if vim.deep_equal(e.body, lines) then
+          matched = gi
+          break
+        end
+      end
+      if matched then
+        st.index = matched
+        st.slot = tostring(matched)
+      else
+        st.index = nil
+        st.slot = "primary"
+      end
     end
   end
 end
@@ -82,7 +123,9 @@ local function flush(bufnr)
     end
   elseif blank then
     store.delete_notes(st.root, st.path, st.lnum, st.index)
-    reindex_after_removal(st.root, st.path, st.lnum, st.index)
+    M.reindex_after_removal(st.root, st.path, st.lnum, st.index)
+    st.index = nil
+    st.slot = "primary"
   else
     store.upsert_notes(st.root, st.path, st.lnum, st.index, lines)
   end
@@ -135,7 +178,7 @@ local function archive_current(bufnr)
   flush(bufnr) -- persist any pending edits before moving the entry
   local archived = store.archive(st.root, { path = st.path, lnum = st.lnum, index = st.index })
   if archived then
-    reindex_after_removal(st.root, st.path, st.lnum, st.index)
+    M.reindex_after_removal(st.root, st.path, st.lnum, st.index)
   end
   st.closing = true
   local winid = vim.fn.bufwinid(bufnr)
@@ -188,10 +231,13 @@ local function create_window(bufnr, display, anchor, enter)
   -- though this float itself stays open.
   local pos = vim.api.nvim_win_get_position(anchor.winid)
   local border_pad = (opts.border and opts.border ~= "none") and 1 or 0
+  local col = pos[2] + opts.width + border_pad + opts.gap
+  col = math.min(col, vim.o.columns - opts.width - 2 * border_pad)
+  col = math.max(col, 0)
   return vim.api.nvim_open_win(bufnr, enter, {
     relative = "editor",
     row = pos[1],
-    col = pos[2] + opts.width + border_pad + opts.gap,
+    col = col,
     width = opts.width,
     height = opts.height,
     border = opts.border,

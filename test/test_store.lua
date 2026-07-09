@@ -141,4 +141,99 @@ do
   h.eq(outside_abs, store.resolve_path(root, doc.entries[1].path), "resolve_path recovers the absolute path")
 end
 
+-- collect: sorted by (path, lnum), filterable by classification.
+do
+  local root = h.scaffold()
+  store.upsert_notes(root, "lua/b.lua", 5, nil, { "just a memo" })
+  store.upsert_notes(root, "lua/a.lua", 20, nil, { "! second in a.lua" })
+  store.upsert_notes(root, "lua/a.lua", 10, nil, { "? first in a.lua" })
+
+  local all = store.collect(root)
+  h.eq(3, #all, "collect returns every entry with no filter")
+  h.eq("lua/a.lua", all[1].entry.path, "sorted by path first")
+  h.eq(10, all[1].entry.lnum, "then by lnum within the same path")
+  h.eq("question", all[1].class, "class computed via classify")
+  h.eq("lua/a.lua", all[2].entry.path, "second item still a.lua")
+  h.eq(20, all[2].entry.lnum, "second item is the higher lnum")
+  h.eq("lua/b.lua", all[3].entry.path, "b.lua sorts after a.lua")
+
+  local issues_only = store.collect(root, { issue = true })
+  h.eq(1, #issues_only, "class_filter narrows to issues")
+  h.eq({ "! second in a.lua" }, issues_only[1].entry.body, "filtered entry is the issue")
+end
+
+-- B-2: store.archive returns the removed entry's group index (1-based
+-- position within its (path, lnum) group before removal), so callers can
+-- reindex any open floats on surviving siblings.
+do
+  local root = h.scaffold()
+  store.upsert_notes(root, "lua/sample.lua", 1, nil, { "first" })
+  store.upsert_notes(root, "lua/sample.lua", 1, nil, { "second" })
+  store.upsert_notes(root, "lua/sample.lua", 1, nil, { "third" })
+
+  local doc = store.read_notes(root)
+  local target = doc.entries[2] -- "second"
+  local archived, group_index = store.archive(root, { heading_lnum = target.heading_lnum })
+  h.eq({ "second" }, archived.body, "archive returns the removed entry")
+  h.eq(2, group_index, "group_index is the entry's 1-based position within its group before removal")
+
+  local remaining = store.read_notes(root)
+  h.eq(2, #remaining.entries, "two entries remain")
+  h.eq({ "first" }, remaining.entries[1].body, "first entry untouched")
+  h.eq({ "third" }, remaining.entries[2].body, "third entry shifted down to index 2")
+end
+
+-- D-2: sort_notes stably sorts entries by (path, lnum), preserving prelude
+-- and group-internal order for same-key duplicates.
+do
+  local root = h.scaffold()
+  store.upsert_notes(root, "lua/b.lua", 5, nil, { "b memo" })
+  store.upsert_notes(root, "lua/a.lua", 20, nil, { "a:20 first" })
+  store.upsert_notes(root, "lua/a.lua", 20, nil, { "a:20 second" })
+  store.upsert_notes(root, "lua/a.lua", 10, nil, { "a:10" })
+
+  local count = store.sort_notes(root)
+  h.eq(4, count, "sort_notes returns the entry count")
+
+  local doc = store.read_notes(root)
+  h.eq(store.default_prelude(), doc.prelude, "prelude preserved by sort")
+  h.eq(4, #doc.entries, "entry count preserved")
+  h.eq({ "lua/a.lua", 10 }, { doc.entries[1].path, doc.entries[1].lnum }, "a.lua:10 sorts first")
+  h.eq({ "lua/a.lua", 20 }, { doc.entries[2].path, doc.entries[2].lnum }, "a.lua:20 sorts second")
+  h.eq({ "a:20 first" }, doc.entries[2].body, "a.lua:20 group keeps original relative order (first)")
+  h.eq({ "lua/a.lua", 20 }, { doc.entries[3].path, doc.entries[3].lnum }, "a.lua:20 second entry still adjacent")
+  h.eq({ "a:20 second" }, doc.entries[3].body, "a.lua:20 group keeps original relative order (second)")
+  h.eq({ "lua/b.lua", 5 }, { doc.entries[4].path, doc.entries[4].lnum }, "b.lua:5 sorts last")
+end
+
+-- D-3: sweep_answered batch-archives every answered entry in one write_notes
+-- + one archive.md append, leaving unanswered entries untouched.
+do
+  local root = h.scaffold()
+  store.upsert_notes(root, "lua/sample.lua", 1, nil, { "just a memo" })
+  store.upsert_notes(root, "lua/sample.lua", 2, nil, { "? unanswered question" })
+  store.upsert_notes(root, "lua/sample.lua", 3, nil, { "? answered question", "-> because X" })
+  store.upsert_notes(root, "lua/sample.lua", 4, nil, { "! answered issue", "-> fixed in abc123" })
+
+  local count = store.sweep_answered(root)
+  h.eq(2, count, "sweep_answered reports the number of answered entries moved")
+
+  local notes_doc = store.read_notes(root)
+  h.eq(2, #notes_doc.entries, "two entries remain in notes.md")
+  h.eq({ "just a memo" }, notes_doc.entries[1].body, "memo untouched")
+  h.eq({ "? unanswered question" }, notes_doc.entries[2].body, "unanswered question untouched")
+
+  local archive_doc = store.read_archive(root)
+  h.eq(2, #archive_doc.entries, "two entries moved to archive.md")
+  h.eq({ "? answered question", "-> because X" }, archive_doc.entries[1].body, "answered question archived")
+  h.eq({ "! answered issue", "-> fixed in abc123" }, archive_doc.entries[2].body, "answered issue archived")
+  h.ok(
+    archive_doc.entries[1].heading_suffix and archive_doc.entries[1].heading_suffix:match("archived:"),
+    "swept entry carries an archived-at timestamp"
+  )
+
+  -- second call: nothing left to sweep, no-op (no writes, count 0).
+  h.eq(0, store.sweep_answered(root), "second sweep is a no-op")
+end
+
 h.finish()

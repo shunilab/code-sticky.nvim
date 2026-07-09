@@ -97,4 +97,54 @@ do
   h.eq(false, config.options.jump_opens_float, "jumpfloat off sets it false")
 end
 
+-- A-4: count-prefixed jump (e.g. 2]n) steps multiple sticky lines at once,
+-- wrapping across the boundary as needed.
+do
+  local root = h.scaffold()
+  vim.fn.writefile({
+    "l1", "l2", "l3", "l4", "l5", "l6",
+  }, root .. "/lua/sample.lua")
+
+  store.upsert_notes(root, "lua/sample.lua", 1, nil, { "memo a" })
+  store.upsert_notes(root, "lua/sample.lua", 3, nil, { "memo b" })
+  store.upsert_notes(root, "lua/sample.lua", 5, nil, { "memo c" })
+
+  vim.cmd.edit(root .. "/lua/sample.lua")
+  vim.api.nvim_win_set_cursor(0, { 1, 0 })
+
+  signs.jump("next", 2)
+  h.eq(5, vim.api.nvim_win_get_cursor(0)[1], "count=2 next from line1 steps to line5")
+
+  signs.jump("next", 2)
+  h.eq(3, vim.api.nvim_win_get_cursor(0)[1], "count=2 next from line5 wraps around to line3")
+
+  vim.api.nvim_win_set_cursor(0, { 5, 0 })
+  signs.jump("prev", 1)
+  h.eq(3, vim.api.nvim_win_get_cursor(0)[1], "count=1 prev from line5 lands on line3")
+
+  vim.cmd("bwipeout!")
+end
+
+-- B-3: saving notes.md directly (hand-editing it, not via a sticky float)
+-- refreshes signs in the noted code buffer.
+do
+  local root = h.scaffold()
+  vim.fn.writefile({
+    "l1", "l2", "l3",
+  }, root .. "/lua/sample.lua")
+
+  vim.cmd.edit(root .. "/lua/sample.lua")
+  local code_bufnr = vim.api.nvim_get_current_buf()
+  h.eq({}, extmark_lines(code_bufnr), "no signs before any note exists")
+
+  vim.fn.mkdir(vim.fs.dirname(store.notes_path(root)), "p")
+  vim.cmd.edit(store.notes_path(root))
+  vim.api.nvim_buf_set_lines(0, -1, -1, false, { "## lua/sample.lua:2", "hand-added memo" })
+  vim.cmd("write")
+
+  h.eq({ 2 }, extmark_lines(code_bufnr), "BufWritePost on notes.md refreshed signs in the code buffer")
+
+  vim.cmd("%bwipeout!")
+end
+
 h.finish()

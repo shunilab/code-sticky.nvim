@@ -88,4 +88,44 @@ do
   vim.cmd("%bwipeout!")
 end
 
+-- D-4: open_list("archive") opens archive.md instead of notes.md.
+do
+  local root = h.scaffold()
+  write_long_sample(root)
+  store.upsert_notes(root, "lua/sample.lua", 2, nil, { "archived note" })
+  store.archive(root, { path = "lua/sample.lua", lnum = 2, index = 1 })
+
+  vim.cmd.edit(root .. "/lua/sample.lua")
+  notes.open_list("archive")
+  h.eq(store.archive_path(root), vim.api.nvim_buf_get_name(0), "open_list(archive) opens archive.md")
+
+  vim.cmd("%bwipeout!")
+end
+
+-- D-4: attach(bufnr, {archive=true}) binds K/<CR> but not `ga`, and jump()
+-- reads entries from archive.md when the archive buffer is current.
+do
+  local root = h.scaffold()
+  write_long_sample(root)
+  store.upsert_notes(root, "lua/sample.lua", 5, nil, { "archived note" })
+  store.archive(root, { path = "lua/sample.lua", lnum = 5, index = 1 })
+
+  vim.cmd.edit(store.archive_path(root))
+  local archive_bufnr = vim.api.nvim_get_current_buf()
+  notes.attach(archive_bufnr, { archive = true })
+
+  local km = require("code-sticky.config").options.notes_keymaps
+  h.ok(vim.fn.maparg(km.jump, "n", false, true).buffer == 1, "jump keymap bound on archive buffer")
+  h.ok(vim.fn.maparg(km.preview, "n", false, true).buffer == 1, "preview keymap bound on archive buffer")
+  h.eq({}, vim.fn.maparg(km.archive, "n", false, true), "archive (ga) keymap NOT bound on archive buffer")
+
+  local lnum = vim.fn.search("^## lua/sample.lua:5")
+  vim.api.nvim_win_set_cursor(0, { lnum, 0 })
+  notes.jump()
+  h.eq(root .. "/lua/sample.lua", vim.fs.normalize(vim.api.nvim_buf_get_name(0)), "jump from archive.md opens the noted file")
+  h.eq(5, vim.api.nvim_win_get_cursor(0)[1], "jump from archive.md lands on the noted line")
+
+  vim.cmd("%bwipeout!")
+end
+
 h.finish()

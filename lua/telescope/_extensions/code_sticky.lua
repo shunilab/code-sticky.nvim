@@ -21,28 +21,13 @@ local function first_line(entry)
   return ""
 end
 
----@param root string
----@param class_filter table<string, boolean>|nil filter to these classifications, nil = no filter
----@return table[] items each { entry = CodeSticky.Entry, class = string }
-local function collect(root, class_filter)
-  local doc = store.read_notes(root)
-  local items = {}
-  for _, e in ipairs(doc.entries) do
-    local class = store.classify(e)
-    if not class_filter or class_filter[class] then
-      table.insert(items, { entry = e, class = class })
-    end
-  end
-  return items
-end
-
 ---@param opts table|nil
 ---@param class_filter table<string, boolean>|nil
 ---@param prompt_title string
 local function picker(opts, class_filter, prompt_title)
   opts = opts or {}
   local root = store.root(0)
-  local items = collect(root, class_filter)
+  local items = store.collect(root, class_filter)
 
   pickers
     .new(opts, {
@@ -107,6 +92,12 @@ return telescope.register_extension({
     end,
     issues = function(opts)
       picker(opts, { issue = true }, "code-sticky: issues")
+    end,
+    memos = function(opts)
+      picker(opts, { memo = true }, "code-sticky: memos")
+    end,
+    answered = function(opts)
+      picker(opts, { answered = true }, "code-sticky: answered")
     end,
   },
 })

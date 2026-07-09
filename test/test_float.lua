@@ -325,4 +325,45 @@ do
   vim.cmd("%bwipeout!")
 end
 
+-- B-2: archiving the first entry of a group from notes.md's `ga` (external
+-- to the float module, not archive_current) must still reindex an already
+-- open sibling float so its next :w updates the right entry.
+do
+  local root = h.scaffold()
+  write_long_sample(root)
+  store.upsert_notes(root, "lua/sample.lua", 3, nil, { "first note" })
+  store.upsert_notes(root, "lua/sample.lua", 3, nil, { "second note" })
+
+  vim.cmd.edit(root .. "/lua/sample.lua")
+  local code_win = vim.api.nvim_get_current_win()
+
+  -- open a float directly on the second entry (index 2) of the group
+  local handle = float.open_entry(root, "lua/sample.lua", 3, 2, { "second note" }, "window", { enter = true })
+
+  -- archive the first entry via notes.md's `ga`, in a separate window so
+  -- the sibling float stays open
+  vim.api.nvim_set_current_win(code_win)
+  vim.cmd.edit(store.notes_path(root))
+  local doc = store.read_notes(root)
+  vim.api.nvim_win_set_cursor(0, { doc.entries[1].heading_lnum, 0 })
+  notes.archive_at_cursor()
+
+  -- edit and save the still-open sibling float
+  vim.api.nvim_set_current_win(handle.winid)
+  vim.api.nvim_buf_set_lines(handle.bufnr, 0, -1, false, { "second note edited" })
+  vim.api.nvim_buf_call(handle.bufnr, function()
+    vim.cmd("write")
+  end)
+
+  local doc2 = store.read_notes(root)
+  h.eq(1, #doc2.entries, "external ga archive + sibling :w leaves exactly one entry")
+  h.eq({ "second note edited" }, doc2.entries[1].body, "sibling float's edit updated the surviving entry, not a stray new one")
+
+  local adoc = store.read_archive(root)
+  h.eq(1, #adoc.entries, "first entry archived")
+  h.eq({ "first note" }, adoc.entries[1].body, "archived entry is the first note")
+
+  vim.cmd("%bwipeout!")
+end
+
 h.finish()

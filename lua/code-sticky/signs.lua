@@ -58,9 +58,12 @@ function M.refresh_all(root)
 end
 
 --- Jump to the next/previous sticky-marked line in the current buffer,
---- wrapping around and echoing a message when it does.
+--- `count` steps at a time, wrapping around (possibly more than once) and
+--- echoing a message whenever the walk crosses the start/end boundary.
 ---@param direction "next"|"prev"
-function M.jump(direction)
+---@param count integer|nil defaults to 1
+function M.jump(direction, count)
+  count = count or 1
   local bufnr = vim.api.nvim_get_current_buf()
   local root = store.root(bufnr)
   local bufname = vim.api.nvim_buf_get_name(bufnr)
@@ -79,35 +82,42 @@ function M.jump(direction)
     return
   end
   table.sort(lnums)
-
-  local cur = vim.api.nvim_win_get_cursor(0)[1]
-  local target
-
-  if direction == "next" then
-    for _, lnum in ipairs(lnums) do
-      if lnum > cur then
-        target = lnum
-        break
-      end
-    end
-    if not target then
-      target = lnums[1]
-      vim.notify("code-sticky: wrapped to first sticky", vim.log.levels.INFO)
-    end
-  else
+  if direction == "prev" then
+    local desc = {}
     for i = #lnums, 1, -1 do
-      if lnums[i] < cur then
-        target = lnums[i]
-        break
-      end
+      table.insert(desc, lnums[i])
     end
-    if not target then
-      target = lnums[#lnums]
-      vim.notify("code-sticky: wrapped to last sticky", vim.log.levels.INFO)
-    end
+    lnums = desc
   end
 
+  local cur = vim.api.nvim_win_get_cursor(0)[1]
+  local base, wrapped
+  for i, lnum in ipairs(lnums) do
+    if (direction == "next" and lnum > cur) or (direction == "prev" and lnum < cur) then
+      base = i
+      break
+    end
+  end
+  if not base then
+    base = 1
+    wrapped = true
+  end
+
+  local n = #lnums
+  local absolute = base + (count - 1)
+  if absolute > n then
+    wrapped = true
+  end
+  local target = lnums[((absolute - 1) % n) + 1]
+
   vim.api.nvim_win_set_cursor(0, { target, 0 })
+
+  if wrapped then
+    vim.notify(
+      "code-sticky: wrapped to " .. (direction == "next" and "first" or "last") .. " sticky",
+      vim.log.levels.INFO
+    )
+  end
 
   if config.options.jump_opens_float then
     require("code-sticky.float").open_at_cursor({ display = "float" })

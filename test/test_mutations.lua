@@ -1,5 +1,7 @@
 local h = dofile("test/helper.lua")
+require("code-sticky").setup({})
 local store = require("code-sticky.store")
+local cs = require("code-sticky")
 
 -- upsert: append new, then replace by index, then a second sibling appends
 -- at the next index.
@@ -132,6 +134,59 @@ do
 
   h.ok(store.redo_notes(root), "redo re-applies the archive")
   h.eq(0, #store.read_notes(root).entries, "entry gone again after redo")
+end
+
+-- D-3: M.sweep() confirms with the user, batch-archives answered entries,
+-- and refreshes signs/floats afterwards. Cancelling the confirm leaves
+-- notes.md untouched.
+do
+  local root = h.scaffold()
+  store.upsert_notes(root, "lua/sample.lua", 1, nil, { "just a memo" })
+  store.upsert_notes(root, "lua/sample.lua", 2, nil, { "? answered question", "-> because X" })
+
+  vim.cmd.edit(root .. "/lua/sample.lua")
+
+  local orig_confirm = vim.fn.confirm
+  vim.fn.confirm = function()
+    return 2 -- "No"
+  end
+  cs.sweep()
+  vim.fn.confirm = orig_confirm
+  h.eq(2, #store.read_notes(root).entries, "cancelling the confirm leaves notes.md untouched")
+
+  vim.fn.confirm = function()
+    return 1 -- "Yes"
+  end
+  cs.sweep()
+  vim.fn.confirm = orig_confirm
+
+  local notes_doc = store.read_notes(root)
+  h.eq(1, #notes_doc.entries, "answered entry swept, memo remains")
+  h.eq({ "just a memo" }, notes_doc.entries[1].body, "surviving entry is the memo")
+
+  local archive_doc = store.read_archive(root)
+  h.eq(1, #archive_doc.entries, "answered entry moved to archive.md")
+
+  vim.cmd("bwipeout!")
+end
+
+-- D-3: sweeping with zero answered entries notifies without touching
+-- notes.md or prompting for confirmation.
+do
+  local root = h.scaffold()
+  store.upsert_notes(root, "lua/sample.lua", 1, nil, { "just a memo" })
+
+  local confirm_called = false
+  local orig_confirm = vim.fn.confirm
+  vim.fn.confirm = function()
+    confirm_called = true
+    return 1
+  end
+  cs.sweep()
+  vim.fn.confirm = orig_confirm
+
+  h.ok(not confirm_called, "no confirm prompt when there is nothing to sweep")
+  h.eq(1, #store.read_notes(root).entries, "notes.md untouched")
 end
 
 h.finish()

@@ -103,10 +103,12 @@ function M.default_prelude()
     "本文の慣習（プラグインが軽くパースします）:",
     "  ? で始まる行  -> 疑問（sign: ?）",
     "  ! で始まる行  -> 指摘・レビューコメント（sign: !）",
-    "  -> で始まる行 -> 疑問/指摘への回答（解決済み扱いになります）",
+    "  -> で始まる行 -> 疑問/指摘への回答（回答済み扱いになります）",
     "",
     "AI へ: 疑問/指摘に答える場合は該当エントリの本文に",
     '"-> 回答内容" の行を追記してください。',
+    "回答済みは「解決した」とは限りません。内容を確認して解決したとみなせたら",
+    "ga でアーカイブしてください。",
     "",
     "このファイルを Neovim で開いたときのキー操作:",
     "  K    エントリが指すコード行の周辺をプレビュー",
@@ -226,10 +228,23 @@ function M.write(path, doc)
   vim.fn.writefile(M.serialize(doc), path)
 end
 
+--- Read the current notes.md Doc. If notes.md is open in a loaded buffer
+--- with unsaved changes (e.g. the user is hand-editing it, or `notes.md`
+--- itself is the visible :CodeSticky-list buffer), that buffer's content is
+--- treated as authoritative rather than what's on disk, so any plugin-driven
+--- mutation (flush, archive, undo, ...) is built on top of the user's
+--- in-progress edits instead of silently discarding them on the next write.
+--- When the buffer is unmodified, disk is read as before (covers e.g. an AI
+--- agent editing notes.md outside Neovim).
 ---@param root string
 ---@return CodeSticky.Doc
 function M.read_notes(root)
-  return M.read(M.notes_path(root), M.default_prelude())
+  local path = M.notes_path(root)
+  local bufnr = vim.fn.bufnr(path)
+  if bufnr ~= -1 and vim.api.nvim_buf_is_loaded(bufnr) and vim.bo[bufnr].modified then
+    return M.parse(vim.api.nvim_buf_get_lines(bufnr, 0, -1, false))
+  end
+  return M.read(path, M.default_prelude())
 end
 
 --- Get (creating if needed) the hidden buffer backing notes.md, loaded from
@@ -391,7 +406,8 @@ end
 --- the caller is editing notes.md directly).
 ---@param root string
 ---@param locator { path: string?, lnum: integer?, index: integer?, heading_lnum: integer? }
----@return CodeSticky.Entry|nil
+---@return CodeSticky.Entry|nil entry
+---@return integer|nil group_index the entry's 1-based position within its (path, lnum) group *before* removal, so callers can float.reindex_after_removal any siblings still open
 function M.archive(root, locator)
   local doc = M.read_notes(root)
   local pos = nil
@@ -412,6 +428,16 @@ function M.archive(root, locator)
     return nil
   end
 
+  local removed_path, removed_lnum = doc.entries[pos].path, doc.entries[pos].lnum
+  local _, group_positions = M.group(doc, removed_path, removed_lnum)
+  local group_index
+  for gi, gpos in ipairs(group_positions) do
+    if gpos == pos then
+      group_index = gi
+      break
+    end
+  end
+
   local entry = table.remove(doc.entries, pos)
   M.write_notes(root, doc)
 
@@ -422,7 +448,7 @@ function M.archive(root, locator)
   table.insert(adoc.entries, stamped)
   M.write_archive(root, adoc)
 
-  return entry
+  return entry, group_index
 end
 
 --- Classify an entry from its body conventions.
@@ -478,6 +504,94 @@ function M.line_status(root, relpath)
     end
   end
   return status
+end
+
+--- Collect notes.md entries with their classification, sorted by
+--- (path, lnum). Shared by the Telescope extension and :CodeSticky qf.
+---@param root string
+---@param class_filter table<string, boolean>|nil filter to these classifications, nil = no filter
+---@return { entry: CodeSticky.Entry, class: string }[]
+function M.collect(root, class_filter)
+  local doc = M.read_notes(root)
+  local items = {}
+  for _, e in ipairs(doc.entries) do
+    local class = M.classify(e)
+    if not class_filter or class_filter[class] then
+      table.insert(items, { entry = e, class = class })
+    end
+  end
+  table.sort(items, function(a, b)
+    if a.entry.path ~= b.entry.path then
+      return a.entry.path < b.entry.path
+    end
+    return a.entry.lnum < b.entry.lnum
+  end)
+  return items
+end
+
+--- Batch-move every `answered` entry from notes.md to archive.md in a single
+--- write_notes + single archive.md append (archiving one at a time via
+--- M.archive would shift heading_lnum out from under the entries still to be
+--- processed). Mirrors M.archive's archived-at stamping.
+---@param root string
+---@return integer count number of entries swept
+function M.sweep_answered(root)
+  local doc = M.read_notes(root)
+  local remaining, swept = {}, {}
+  for _, e in ipairs(doc.entries) do
+    if M.classify(e) == "answered" then
+      table.insert(swept, e)
+    else
+      table.insert(remaining, e)
+    end
+  end
+  if #swept == 0 then
+    return 0
+  end
+  doc.entries = remaining
+  M.write_notes(root, doc)
+
+  local adoc = M.read_archive(root)
+  local stamp = (" <!-- archived: %s -->"):format(os.date("%Y-%m-%d %H:%M"))
+  for _, e in ipairs(swept) do
+    local stamped = vim.deepcopy(e)
+    stamped.heading_lnum = nil
+    stamped.heading_suffix = stamp
+    table.insert(adoc.entries, stamped)
+  end
+  M.write_archive(root, adoc)
+
+  return #swept
+end
+
+--- Stably sort notes.md entries by (path, lnum), preserving the prelude and
+--- each group's internal ordering (table.sort is not stable, so ties break
+--- on original position). Undo-able via :CodeSticky undo since it goes
+--- through write_notes.
+---@param root string
+---@return integer count number of entries sorted
+function M.sort_notes(root)
+  local doc = M.read_notes(root)
+  local indexed = {}
+  for i, e in ipairs(doc.entries) do
+    indexed[i] = { entry = e, orig = i }
+  end
+  table.sort(indexed, function(a, b)
+    if a.entry.path ~= b.entry.path then
+      return a.entry.path < b.entry.path
+    end
+    if a.entry.lnum ~= b.entry.lnum then
+      return a.entry.lnum < b.entry.lnum
+    end
+    return a.orig < b.orig
+  end)
+  local sorted = {}
+  for i, item in ipairs(indexed) do
+    sorted[i] = item.entry
+  end
+  doc.entries = sorted
+  M.write_notes(root, doc)
+  return #doc.entries
 end
 
 return M
