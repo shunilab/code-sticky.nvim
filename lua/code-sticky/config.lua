@@ -18,7 +18,7 @@ M.defaults = {
     gap = 2,
   },
   float_keymaps = {
-    close = { "q", "<Esc>" },
+    close = { "q" },
     new_sibling = "<C-n>",
     focus_next = "<Tab>",
     focus_prev = "<S-Tab>",

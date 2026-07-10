@@ -62,7 +62,7 @@ Neovim 専用（0.10+）。純 Lua、必須依存ゼロ（Telescope はあれば
 	リへ。既に開いていれば既存フロートへフォーカスする。
 
 	付箋フロートは `buftype=acwrite` の本物のバッファ。`:w` で保存、
-	Undo 有効。ノーマルモードの `q` / `<Esc>` で閉じると自動保存
+	Undo 有効。ノーマルモードの `q` で閉じると自動保存
 	される。空白のまま閉じたら何も書き込まれず、既存の付箋を空白に
 	して閉じたら削除される。
 
@@ -201,7 +201,7 @@ sign と開いている付箋の index が自動で追従する。
 	    enter_insert = false,
 	  },
 	  float_keymaps = {
-	    close = { 'q', '<Esc>' },
+	    close = { 'q' },
 	    archive = 'ga',
 	    new_sibling = '<C-n>',
 	    focus_next = '<Tab>',
